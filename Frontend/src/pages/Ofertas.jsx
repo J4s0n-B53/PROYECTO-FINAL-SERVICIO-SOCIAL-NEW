@@ -336,6 +336,7 @@ export default function Ofertas({ historial = false }) {
   const [selectedEnrollIds, setSelectedEnrollIds] = useState([]);
   const [enrollLoading, setEnrollLoading] = useState(false);
   const [enrollingId, setEnrollingId] = useState(null);
+  const [confirmEnroll, setConfirmEnroll] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState(null);
   const [form,      setForm]      = useState(EMPTY_FORM);
   const [imageFile, setImageFile] = useState(null);
@@ -753,8 +754,8 @@ export default function Ofertas({ historial = false }) {
           onClose={() => enrollingId === null && setEnrollModal(null)}
           width={620}
           footer={<>
-            <Btn variant="outline" onClick={() => setEnrollModal(null)} disabled={enrollingId !== null}>Cerrar</Btn>
-            <Btn variant="green" onClick={inscribirSeleccionados} disabled={enrollingId !== null || selectedEnrollIds.length === 0 || Number(enrollModal.cupo_actual) >= Number(enrollModal.cupo_maximo)}>
+            <Btn variant="outline" onClick={() => { setConfirmEnroll(false); setEnrollModal(null); }} disabled={enrollingId !== null}>Cerrar</Btn>
+            <Btn variant="green" onClick={() => setConfirmEnroll(true)} disabled={enrollingId !== null || selectedEnrollIds.length === 0 || Number(enrollModal.cupo_actual) >= Number(enrollModal.cupo_maximo)}>
               {enrollingId !== null ? 'Inscribiendo...' : `Aceptar${selectedEnrollIds.length ? ` (${selectedEnrollIds.length})` : ''}`}
             </Btn>
           </>}
@@ -790,6 +791,30 @@ export default function Ofertas({ historial = false }) {
             Cupos disponibles: {Math.max(0, Number(enrollModal.cupo_maximo) - Number(enrollModal.cupo_actual))}
           </p>
           {Number(enrollModal.cupo_actual) >= Number(enrollModal.cupo_maximo) && <p style={{ marginTop:4, color:'var(--red)', fontSize:12 }}>La oferta ya alcanzó su cupo máximo.</p>}
+        </Modal>
+      )}
+
+      {confirmEnroll && enrollModal && (
+        <Modal
+          open
+          title="Confirmar inscripción"
+          onClose={() => setConfirmEnroll(false)}
+          width={500}
+          footer={<>
+            <Btn variant="outline" onClick={() => setConfirmEnroll(false)} disabled={enrollingId !== null}>Cancelar</Btn>
+            <Btn variant="green" onClick={() => { setConfirmEnroll(false); inscribirSeleccionados(); }} disabled={enrollingId !== null}>
+              {enrollingId !== null ? 'Inscribiendo...' : 'Confirmar inscripción'}
+            </Btn>
+          </>}
+        >
+          <p style={{ color:'var(--text2)', fontSize:14, lineHeight:1.6 }}>
+            ¿Estás seguro de inscribir a estos {selectedEnrollIds.length} estudiante(s) en <strong style={{ color:'var(--text)' }}>{enrollModal.titulo}</strong>?
+          </p>
+          <ul style={{ margin:'12px 0 0', paddingLeft:20, color:'var(--text2)', fontSize:13, lineHeight:1.7 }}>
+            {enrollCandidates.filter(student => selectedEnrollIds.includes(Number(student.id_estudiante))).map(student => (
+              <li key={student.id_estudiante}>{student.nombre_completo} · {student.numero_expediente}</li>
+            ))}
+          </ul>
         </Modal>
       )}
 
@@ -990,7 +1015,7 @@ function AdminInscritosModal({ o, inscritos, onClose, onAcreditar, onCambiarEsta
 
   return (
     <>
-      <Modal open title={`Inscritos en ${o.titulo}`} onClose={onClose} width={760}
+      <Modal open title={`Inscritos en ${o.titulo}`} onClose={onClose} width={640}
         footer={<Btn variant="outline" onClick={onClose}>Cerrar</Btn>}
       >
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:16 }}>
@@ -1066,21 +1091,23 @@ function AdminInscritosModal({ o, inscritos, onClose, onAcreditar, onCambiarEsta
               padding:'12px 14px',
               background:'var(--bg)'
             }}>
-              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'minmax(0,1fr) auto', alignItems:'center', gap:16 }}>
                 <div style={{ minWidth:0, display:'flex', flexDirection:'column', gap:4 }}>
                   <div style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflowWrap:'anywhere' }}>
                     {i.estudiante_nombre}
                   </div>
-                  <div style={{ fontSize:12, color:'var(--text2)' }}>Expediente: {i.numero_expediente || 'Pendiente'}</div>
-                  <div style={{ fontSize:12, color:'var(--text2)', overflowWrap:'anywhere' }}>
+                  <div style={{ display:'flex', flexWrap:'wrap', columnGap:12, rowGap:3, fontSize:11, color:'var(--text2)' }}>
+                    <span>Expediente: {i.numero_expediente || 'Pendiente'}</span>
+                    <span style={{ overflowWrap:'anywhere' }}>
                     {i.correo_institucional}
+                    </span>
                   </div>
-                  <div style={{ fontSize:12, color:'var(--text2)', overflowWrap:'anywhere' }}>
+                  <div style={{ fontSize:11, color:'var(--text2)', overflowWrap:'anywhere' }}>
                     {i.nombre_carrera || i.carrera || i.estudiante_carrera || 'Carrera no asignada'}
                   </div>
                 </div>
 
-                <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:7, flexWrap:'wrap' }}>
                   <Badge type={i.estado}>{i.estado}</Badge>
                   {estaPendiente ? (
                     <>
