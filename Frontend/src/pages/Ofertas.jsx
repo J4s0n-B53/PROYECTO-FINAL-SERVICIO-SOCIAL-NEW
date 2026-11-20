@@ -670,7 +670,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
               }}
             />
           )}
-          {papelera && <Btn variant="outline" onClick={() => setConfirmacionPapelera({ tipo:'vaciar' })} disabled={!ofertas.length}>Vaciar papelera</Btn>}
+          {papelera && <Btn variant="outline" onClick={() => setConfirmacionPapelera({ tipo:'vaciar' })} disabled={!ofertas.length} style={{ background:'#0A1B4E', color:'#fff', border:'1px solid #0A1B4E' }}>Vaciar papelera</Btn>}
           {!historial && !papelera && <Btn variant="accent" onClick={openNew}>+ Nueva oferta</Btn>}
         </div>
 
