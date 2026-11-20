@@ -352,7 +352,9 @@ DELETE FROM usuarios WHERE rol <> 'admin';
 ALTER TABLE usuarios MODIFY rol ENUM('admin') NOT NULL DEFAULT 'admin';
 ALTER TABLE ofertas
   ADD COLUMN institucion_receptora VARCHAR(180) NULL,
-  ADD COLUMN modalidad VARCHAR(60) NULL;
+  ADD COLUMN modalidad VARCHAR(60) NULL,
+  ADD COLUMN deleted_at DATETIME NULL,
+  ADD KEY idx_ofertas_deleted_at (deleted_at);
 
 CREATE TABLE reglas_academicas (
   id_regla INT NOT NULL AUTO_INCREMENT PRIMARY KEY,

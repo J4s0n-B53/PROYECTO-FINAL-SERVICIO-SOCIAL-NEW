@@ -5,6 +5,7 @@ const ADMIN_MENU = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/ofertas', label: 'Ofertas', icon: '💼' },
   { to: '/historial-ofertas', label: 'Historial de ofertas', icon: '🗂️' },
+  { to: '/papelera-ofertas', label: 'Papelera de ofertas', icon: '???' },
   { to: '/inscripciones', label: 'Inscripciones', icon: '📋' },
   { to: '/usuarios', label: 'Usuarios', icon: '👥' },
   { to: '/acerca', label: 'Sobre nosotros', icon: 'ℹ️' },

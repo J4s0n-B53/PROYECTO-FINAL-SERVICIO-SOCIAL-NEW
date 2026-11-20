@@ -31,6 +31,7 @@ export default function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="ofertas" element={<Ofertas />} />
             <Route path="historial-ofertas" element={<Ofertas historial />} />
+            <Route path="papelera-ofertas" element={<Ofertas papelera />} />
             <Route path="inscripciones" element={<Inscripciones />} />
             <Route path="usuarios" element={<Usuarios />} />
             <Route path="acerca" element={<Acerca />} />

@@ -59,7 +59,7 @@ async function inscribir(estudianteId, ofertaId, actorId) {
       throw { status: 403, message: 'Ya completaste las 500 horas de servicio social' };
 
     const [[oferta]] = await conn.query(
-      'SELECT * FROM ofertas WHERE id_oferta = ? AND activo = TRUE FOR UPDATE',
+      'SELECT * FROM ofertas WHERE id_oferta = ? AND activo = TRUE AND deleted_at IS NULL FOR UPDATE',
       [ofertaId]
     );
     if (!oferta) throw { status: 404, message: 'Oferta no disponible' };

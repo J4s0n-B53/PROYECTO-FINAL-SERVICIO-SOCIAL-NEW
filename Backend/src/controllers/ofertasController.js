@@ -14,9 +14,14 @@ const upload = multer({
   fileFilter: (_req, file, done) => file.mimetype.startsWith('image/') ? done(null, true) : done(new Error('Solo se permiten archivos de imagen')),
 }).single('imagen');
 
-async function getAll(_req, res) {
-  try { res.json(await ofertasService.getAll()); }
+async function getAll(req, res) {
+  try { res.json(await ofertasService.getAll({ papelera: req.query.papelera === 'true' })); }
   catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al obtener ofertas' }); }
+}
+
+async function getTrash(_req, res) {
+  try { res.json(await ofertasService.getAll({ papelera: true })); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al obtener la papelera' }); }
 }
 
 async function getById(req, res) {
@@ -51,6 +56,28 @@ async function toggle(req, res) {
   }
 }
 
+async function enviarAPapelera(req, res) {
+  try {
+    await ofertasService.enviarAPapelera(req.params.id);
+    res.json({ mensaje: 'Oferta movida a la papelera; se eliminará automáticamente en 30 días' });
+  } catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al mover la oferta a la papelera' }); }
+}
+
+async function restaurarDePapelera(req, res) {
+  try { await ofertasService.restaurarDePapelera(req.params.id); res.json({ mensaje: 'Oferta restaurada' }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al restaurar la oferta' }); }
+}
+
+async function eliminarDefinitivamente(req, res) {
+  try { await ofertasService.eliminarDefinitivamente(req.params.id); res.json({ mensaje: 'Oferta eliminada definitivamente' }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al eliminar la oferta' }); }
+}
+
+async function vaciarPapelera(_req, res) {
+  try { res.json({ mensaje:'Papelera vaciada', ...await ofertasService.vaciarPapelera() }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al vaciar la papelera' }); }
+}
+
 function uploadImagen(req, res) {
   upload(req, res, err => {
     if (err) {
@@ -63,4 +90,4 @@ function uploadImagen(req, res) {
   });
 }
 
-module.exports = { getAll, getById, create, update, toggle, uploadImagen };
+module.exports = { getAll, getTrash, getById, create, update, toggle, enviarAPapelera, restaurarDePapelera, eliminarDefinitivamente, vaciarPapelera, uploadImagen };

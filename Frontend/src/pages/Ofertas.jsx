@@ -320,7 +320,7 @@ function ImageDropField({ value, file, onFile, onUrlChange, id = 'oferta-imagen-
   );
 }
 
-export default function Ofertas({ historial = false }) {
+export default function Ofertas({ historial = false, papelera = false }) {
   const [ofertas,   setOfertas]   = useState([]);
   const [carreras,  setCarreras]  = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
@@ -338,6 +338,8 @@ export default function Ofertas({ historial = false }) {
   const [enrollingId, setEnrollingId] = useState(null);
   const [confirmEnroll, setConfirmEnroll] = useState(false);
   const [confirmToggle, setConfirmToggle] = useState(null);
+  const [confirmacionPapelera, setConfirmacionPapelera] = useState(null);
+  const [procesandoPapelera, setProcesandoPapelera] = useState(false);
   const [form,      setForm]      = useState(EMPTY_FORM);
   const [imageFile, setImageFile] = useState(null);
   const [editId,    setEditId]    = useState(null);
@@ -346,7 +348,7 @@ export default function Ofertas({ historial = false }) {
 
   async function load() {
     try {
-      const [o, c, i] = await Promise.all([api.get('/ofertas'), api.get('/carreras'), api.get('/inscripciones')]);
+      const [o, c, i] = await Promise.all([papelera ? api.get('/ofertas/trash') : api.get('/ofertas'), api.get('/carreras'), api.get('/inscripciones')]);
       setOfertas(o.data);
       setCarreras(c.data);
       setInscripciones(i.data);
@@ -355,7 +357,7 @@ export default function Ofertas({ historial = false }) {
   }
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [papelera]);
 
   function openNew()   { setForm(EMPTY_FORM); setImageFile(null); setEditId(null); setModal(true); }
   function openEdit(o) {
@@ -446,6 +448,30 @@ export default function Ofertas({ historial = false }) {
       load();
     }
     catch { show('Error','error'); }
+  }
+
+  async function ejecutarAccionPapelera() {
+    if (!confirmacionPapelera) return;
+    setProcesandoPapelera(true);
+    try {
+      const { tipo, oferta } = confirmacionPapelera;
+      if (tipo === 'mover') await api.delete(`/ofertas/${oferta.id_oferta}`);
+      if (tipo === 'eliminar') await api.delete(`/ofertas/trash/${oferta.id_oferta}`);
+      if (tipo === 'vaciar') await api.delete('/ofertas/trash');
+      show(tipo === 'mover' ? 'Oferta movida a la papelera' : tipo === 'vaciar' ? 'Papelera vaciada' : 'Oferta eliminada definitivamente');
+      setConfirmacionPapelera(null);
+      await load();
+    } catch (e) {
+      show(e.response?.data?.error || 'No se pudo completar la acción', 'error');
+    } finally { setProcesandoPapelera(false); }
+  }
+
+  async function restaurarOferta(id) {
+    try {
+      await api.patch(`/ofertas/trash/${id}/restore`);
+      show('Oferta restaurada');
+      await load();
+    } catch (e) { show(e.response?.data?.error || 'No se pudo restaurar la oferta', 'error'); }
   }
 
   async function openAdminDetalle(o) {
@@ -568,7 +594,7 @@ export default function Ofertas({ historial = false }) {
 
   const filtered = ofertas.filter(o => {
     const coincideQuery   = !query || o.titulo.toLowerCase().includes(query.toLowerCase());
-    const coincideEstado = historial ? !toBoolean(o.activo) : toBoolean(o.activo);
+    const coincideEstado = papelera || (historial ? !toBoolean(o.activo) : toBoolean(o.activo));
     const coincideFechaCreacion =
       !historial ||
       !fechaCreacionFiltro ||
@@ -651,21 +677,26 @@ export default function Ofertas({ historial = false }) {
               }}
             />
           )}
-          {!historial && <Btn variant="accent" onClick={openNew}>+ Nueva oferta</Btn>}
+          {papelera && <Btn variant="outline" onClick={() => setConfirmacionPapelera({ tipo:'vaciar' })} disabled={!ofertas.length}>Vaciar papelera</Btn>}
+          {!historial && !papelera && <Btn variant="accent" onClick={openNew}>+ Nueva oferta</Btn>}
         </div>
 
       {/* ADMIN CARDS */}
       {filtered.length === 0
-          ? <EmptyState msg={historial ? 'No hay ofertas finalizadas en el historial.' : 'No hay ofertas activas registradas.'} />
+          ? <EmptyState msg={papelera ? 'La papelera está vacía.' : historial ? 'No hay ofertas finalizadas en el historial.' : 'No hay ofertas activas registradas.'} />
           : <div className="offer-cards" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:18 }}>
               {filtered.map(o => (
                 <AdminOfertaCard
                   key={o.id_oferta}
                   o={o}
-                  onOpen={() => openAdminDetalle(o)}
+                  papelera={papelera}
+                  onOpen={() => !papelera && openAdminDetalle(o)}
                   onEdit={() => openEdit(o)}
                   onToggle={() => o.activo ? setConfirmToggle(o) : toggleOferta(o.id_oferta)}
                   onEnroll={() => openEnrollModal(o)}
+                  onTrash={() => setConfirmacionPapelera({ tipo:'mover', oferta:o })}
+                  onRestore={() => restaurarOferta(o.id_oferta)}
+                  onDeleteForever={() => setConfirmacionPapelera({ tipo:'eliminar', oferta:o })}
                 />
               ))}
             </div>
@@ -818,6 +849,29 @@ export default function Ofertas({ historial = false }) {
         </Modal>
       )}
 
+      {confirmacionPapelera && (
+        <Modal
+          open
+          title={confirmacionPapelera.tipo === 'mover' ? 'Mover oferta a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar oferta definitivamente'}
+          onClose={() => !procesandoPapelera && setConfirmacionPapelera(null)}
+          width={470}
+          footer={<>
+            <Btn variant="outline" onClick={() => setConfirmacionPapelera(null)} disabled={procesandoPapelera}>Cancelar</Btn>
+            <Btn variant="outline" onClick={ejecutarAccionPapelera} disabled={procesandoPapelera} style={{ color:'#c53030', borderColor:'#f1a6a6' }}>
+              {procesandoPapelera ? 'Procesando...' : confirmacionPapelera.tipo === 'mover' ? 'Mover a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar ahora'}
+            </Btn>
+          </>}
+        >
+          <p style={{ color:'var(--text2)', lineHeight:1.6, fontSize:14 }}>
+            {confirmacionPapelera.tipo === 'mover'
+              ? <>¿Estás seguro de mover <strong>{confirmacionPapelera.oferta.titulo}</strong> a la papelera? Se eliminará automáticamente en 30 días. Solo se puede mover si no tiene inscripciones ni horas acreditadas.</>
+              : confirmacionPapelera.tipo === 'vaciar'
+                ? <>¿Estás seguro de vaciar la papelera? Se eliminarán definitivamente todas las ofertas que contiene y no se podrán recuperar.</>
+                : <>¿Estás seguro de eliminar definitivamente <strong>{confirmacionPapelera.oferta.titulo}</strong>? Esta acción no se puede deshacer.</>}
+          </p>
+        </Modal>
+      )}
+
       {confirmToggle && (
         <Modal
           open
@@ -855,7 +909,7 @@ export default function Ofertas({ historial = false }) {
   );
 }
 
-function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll }) {
+function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, onTrash, onRestore, onDeleteForever }) {
   const pct = o.cupo_maximo > 0 ? Math.round((o.cupo_actual/o.cupo_maximo)*100) : 0;
   const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
 
@@ -891,7 +945,7 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll }) {
                 {o.activo ? 'Activo' : 'Finalizada'}
               </Badge>
             </div>
-            {o.created_at && (
+            {papelera ? <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap' }}>Se elimina: {formatDate(o.eliminar_en)}</span> : o.created_at && (
               <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap' }}>
                 Creada: {formatDate(o.created_at)}
               </span>
@@ -916,6 +970,8 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll }) {
           <Tag color="blue">{o.horas_acreditar}h</Tag>
           {(o.fecha_inicio || o.fecha_fin) && <Tag color="gray">{formatDate(o.fecha_inicio) || 'Inicio'} - {formatDate(o.fecha_fin) || 'Fin'}</Tag>}
           {(o.hora_inicio || o.hora_fin) && <Tag color="gray">{formatTime(o.hora_inicio) || '--:--'} - {formatTime(o.hora_fin) || '--:--'}</Tag>}
+          {o.institucion_receptora && <Tag color="gray">{o.institucion_receptora}</Tag>}
+          {o.modalidad && <Tag color="gray">{o.modalidad}</Tag>}
           {o.ubicacion && <Tag color="gray">{o.ubicacion}</Tag>}
           {o.es_ambiental ? <Tag color="green">Ambiental</Tag> : null}
           {o.nombre_carrera ? <Tag color="green">{o.nombre_carrera}</Tag> : <Tag color="amber">Todas las carreras</Tag>}
@@ -930,24 +986,23 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll }) {
             <div style={{ height:'100%', width:`${pct}%`, background:barColor, borderRadius:3 }} />
           </div>
 
-          {o.activo && <Btn variant="green" onClick={e => { e.stopPropagation(); onEnroll(); }} style={{ width:'100%', justifyContent:'center', marginBottom:8 }}>
-            Inscribir estudiantes
-          </Btn>}
-
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-            <Btn variant="outline" onClick={e => { e.stopPropagation(); onEdit(); }}>Editar</Btn>
-            <Btn
-              variant={o.activo ? 'outline' : 'green'}
-              onClick={e => { e.stopPropagation(); onToggle(); }}
-              style={o.activo ? {
-                background: 'rgba(107,63,160,.10)',
-                color: '#5a2d91',
-                border: '1px solid rgba(107,63,160,.30)'
-              } : undefined}
-            >
-              {o.activo ? 'Finalizar' : 'Activar'}
-            </Btn>
-          </div>
+          {papelera ? <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <Btn variant="green" onClick={e => { e.stopPropagation(); onRestore(); }}>Restaurar</Btn>
+            <Btn variant="outline" onClick={e => { e.stopPropagation(); onDeleteForever(); }} style={{ color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar ahora</Btn>
+          </div> : <>
+            {o.activo && <Btn variant="green" onClick={e => { e.stopPropagation(); onEnroll(); }} style={{ width:'100%', justifyContent:'center', marginBottom:8 }}>
+              Inscribir estudiantes
+            </Btn>}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              <Btn variant="outline" onClick={e => { e.stopPropagation(); onEdit(); }}>Editar</Btn>
+              <Btn
+                variant={o.activo ? 'outline' : 'green'}
+                onClick={e => { e.stopPropagation(); onToggle(); }}
+                style={o.activo ? { background:'rgba(107,63,160,.10)', color:'#5a2d91', border:'1px solid rgba(107,63,160,.30)' } : undefined}
+              >{o.activo ? 'Finalizar' : 'Activar'}</Btn>
+            </div>
+            <Btn variant="outline" onClick={e => { e.stopPropagation(); onTrash(); }} style={{ width:'100%', justifyContent:'center', marginTop:8, color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar oferta</Btn>
+          </> }
         </div>
       </div>
     </div>
