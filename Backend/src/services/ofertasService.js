@@ -82,8 +82,27 @@ async function update(id, data) {
 }
 
 async function toggle(id) {
-  const [result] = await pool.query('UPDATE ofertas SET activo = NOT activo WHERE id_oferta = ? AND deleted_at IS NULL', [id]);
-  if (!result.affectedRows) throw { status: 404, message: 'Oferta no encontrada' };
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [[oferta]] = await conn.query('SELECT id_oferta, activo FROM ofertas WHERE id_oferta=? AND deleted_at IS NULL FOR UPDATE', [id]);
+    if (!oferta) throw { status: 404, message: 'Oferta no encontrada' };
+    if (Boolean(oferta.activo)) {
+      const [[avance]] = await conn.query(`SELECT
+          SUM(estado <> 'rechazado') AS estudiantes_inscritos,
+          SUM(horas_acreditadas IS NOT NULL AND horas_acreditadas > 0) AS horas_acreditadas
+        FROM inscripciones WHERE id_oferta=?`, [id]);
+      if (Number(avance.estudiantes_inscritos || 0) < 1)
+        throw { status: 409, message: 'No se puede finalizar una oferta sin estudiantes inscritos' };
+      if (Number(avance.horas_acreditadas || 0) < 1)
+        throw { status: 409, message: 'No se puede finalizar: primero acredita horas a los estudiantes inscritos' };
+    }
+    await conn.query('UPDATE ofertas SET activo = NOT activo WHERE id_oferta=?', [id]);
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally { conn.release(); }
 }
 
 async function enviarAPapelera(id) {
@@ -92,11 +111,14 @@ async function enviarAPapelera(id) {
     await conn.beginTransaction();
     const [[oferta]] = await conn.query('SELECT id_oferta FROM ofertas WHERE id_oferta=? AND deleted_at IS NULL FOR UPDATE', [id]);
     if (!oferta) throw { status: 404, message: 'Oferta no encontrada' };
-    const [[uso]] = await conn.query(`SELECT COUNT(*) AS inscripciones,
+    const [[uso]] = await conn.query(`SELECT
+        COALESCE(SUM(estado IN ('aceptado', 'finalizado')),0) AS estudiantes_aceptados,
         COALESCE(SUM(horas_acreditadas IS NOT NULL),0) AS horas_asignadas
       FROM inscripciones WHERE id_oferta=?`, [id]);
-    if (Number(uso.inscripciones) > 0 || Number(uso.horas_asignadas) > 0)
-      throw { status: 409, message: 'No se puede eliminar: esta oferta tiene estudiantes inscritos o horas acreditadas' };
+    if (Number(uso.estudiantes_aceptados) > 0 || Number(uso.horas_asignadas) > 0)
+      throw { status: 409, message: 'No se puede eliminar: la oferta tiene estudiantes aceptados o horas acreditadas' };
+    await conn.query(`DELETE FROM inscripciones
+      WHERE id_oferta=? AND estado NOT IN ('aceptado', 'finalizado') AND horas_acreditadas IS NULL`, [id]);
     await conn.query('UPDATE ofertas SET deleted_at=CURRENT_TIMESTAMP WHERE id_oferta=? AND deleted_at IS NULL', [id]);
     await conn.commit();
   } catch (err) {

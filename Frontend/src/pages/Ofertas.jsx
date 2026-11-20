@@ -458,20 +458,13 @@ export default function Ofertas({ historial = false, papelera = false }) {
       if (tipo === 'mover') await api.delete(`/ofertas/${oferta.id_oferta}`);
       if (tipo === 'eliminar') await api.delete(`/ofertas/trash/${oferta.id_oferta}`);
       if (tipo === 'vaciar') await api.delete('/ofertas/trash');
-      show(tipo === 'mover' ? 'Oferta movida a la papelera' : tipo === 'vaciar' ? 'Papelera vaciada' : 'Oferta eliminada definitivamente');
+      if (tipo === 'restaurar') await api.patch(`/ofertas/trash/${oferta.id_oferta}/restore`);
+      show(tipo === 'mover' ? 'Oferta movida a la papelera' : tipo === 'vaciar' ? 'Papelera vaciada' : tipo === 'restaurar' ? 'Oferta restaurada' : 'Oferta eliminada definitivamente');
       setConfirmacionPapelera(null);
       await load();
     } catch (e) {
       show(e.response?.data?.error || 'No se pudo completar la acción', 'error');
     } finally { setProcesandoPapelera(false); }
-  }
-
-  async function restaurarOferta(id) {
-    try {
-      await api.patch(`/ofertas/trash/${id}/restore`);
-      show('Oferta restaurada');
-      await load();
-    } catch (e) { show(e.response?.data?.error || 'No se pudo restaurar la oferta', 'error'); }
   }
 
   async function openAdminDetalle(o) {
@@ -690,12 +683,17 @@ export default function Ofertas({ historial = false, papelera = false }) {
                   key={o.id_oferta}
                   o={o}
                   papelera={papelera}
+                  historial={historial}
+                  puedeFinalizar={
+                    inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && i.estado !== 'rechazado') &&
+                    inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && Number(i.horas_acreditadas) > 0)
+                  }
                   onOpen={() => !papelera && openAdminDetalle(o)}
                   onEdit={() => openEdit(o)}
                   onToggle={() => o.activo ? setConfirmToggle(o) : toggleOferta(o.id_oferta)}
                   onEnroll={() => openEnrollModal(o)}
                   onTrash={() => setConfirmacionPapelera({ tipo:'mover', oferta:o })}
-                  onRestore={() => restaurarOferta(o.id_oferta)}
+                  onRestore={() => setConfirmacionPapelera({ tipo:'restaurar', oferta:o })}
                   onDeleteForever={() => setConfirmacionPapelera({ tipo:'eliminar', oferta:o })}
                 />
               ))}
@@ -852,22 +850,24 @@ export default function Ofertas({ historial = false, papelera = false }) {
       {confirmacionPapelera && (
         <Modal
           open
-          title={confirmacionPapelera.tipo === 'mover' ? 'Mover oferta a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar oferta definitivamente'}
+          title={confirmacionPapelera.tipo === 'mover' ? 'Mover oferta a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : confirmacionPapelera.tipo === 'restaurar' ? 'Restaurar oferta' : 'Eliminar oferta definitivamente'}
           onClose={() => !procesandoPapelera && setConfirmacionPapelera(null)}
           width={470}
           footer={<>
             <Btn variant="outline" onClick={() => setConfirmacionPapelera(null)} disabled={procesandoPapelera}>Cancelar</Btn>
-            <Btn variant="outline" onClick={ejecutarAccionPapelera} disabled={procesandoPapelera} style={{ color:'#c53030', borderColor:'#f1a6a6' }}>
-              {procesandoPapelera ? 'Procesando...' : confirmacionPapelera.tipo === 'mover' ? 'Mover a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar ahora'}
+            <Btn variant={confirmacionPapelera.tipo === 'restaurar' ? 'green' : 'outline'} onClick={ejecutarAccionPapelera} disabled={procesandoPapelera} style={confirmacionPapelera.tipo === 'restaurar' ? undefined : { color:'#c53030', borderColor:'#f1a6a6' }}>
+              {procesandoPapelera ? 'Procesando...' : confirmacionPapelera.tipo === 'mover' ? 'Mover a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : confirmacionPapelera.tipo === 'restaurar' ? 'Restaurar oferta' : 'Eliminar ahora'}
             </Btn>
           </>}
         >
           <p style={{ color:'var(--text2)', lineHeight:1.6, fontSize:14 }}>
             {confirmacionPapelera.tipo === 'mover'
-              ? <>¿Estás seguro de mover <strong>{confirmacionPapelera.oferta.titulo}</strong> a la papelera? Se eliminará automáticamente en 30 días. Solo se puede mover si no tiene inscripciones ni horas acreditadas.</>
+              ? <>¿Estás seguro de mover <strong>{confirmacionPapelera.oferta.titulo}</strong> a la papelera? Se eliminará automáticamente en 30 días. No se puede mover si tiene estudiantes aceptados o horas acreditadas. Las inscripciones pendientes o rechazadas se eliminarán.</>
               : confirmacionPapelera.tipo === 'vaciar'
                 ? <>¿Estás seguro de vaciar la papelera? Se eliminarán definitivamente todas las ofertas que contiene y no se podrán recuperar.</>
-                : <>¿Estás seguro de eliminar definitivamente <strong>{confirmacionPapelera.oferta.titulo}</strong>? Esta acción no se puede deshacer.</>}
+                : confirmacionPapelera.tipo === 'restaurar'
+                  ? <>¿Estás seguro de restaurar <strong>{confirmacionPapelera.oferta.titulo}</strong>? La oferta volverá a la sección de ofertas.</>
+                  : <>¿Estás seguro de eliminar definitivamente <strong>{confirmacionPapelera.oferta.titulo}</strong>? Esta acción no se puede deshacer.</>}
           </p>
         </Modal>
       )}
@@ -909,7 +909,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
   );
 }
 
-function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, onTrash, onRestore, onDeleteForever }) {
+function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, historial = false, puedeFinalizar = false, onTrash, onRestore, onDeleteForever }) {
   const pct = o.cupo_maximo > 0 ? Math.round((o.cupo_actual/o.cupo_maximo)*100) : 0;
   const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
 
@@ -945,7 +945,7 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = fal
                 {o.activo ? 'Activo' : 'Finalizada'}
               </Badge>
             </div>
-            {papelera ? <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap' }}>Se elimina: {formatDate(o.eliminar_en)}</span> : o.created_at && (
+            {papelera ? <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap', textAlign:'right' }}>Se elimina: {formatDate(o.eliminar_en)}<br />{Math.max(0, Math.ceil((new Date(o.eliminar_en).getTime() - Date.now()) / 86400000))} días restantes</span> : o.created_at && (
               <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap' }}>
                 Creada: {formatDate(o.created_at)}
               </span>
@@ -998,10 +998,12 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = fal
               <Btn
                 variant={o.activo ? 'outline' : 'green'}
                 onClick={e => { e.stopPropagation(); onToggle(); }}
+                disabled={Boolean(o.activo) && !puedeFinalizar}
+                title={Boolean(o.activo) && !puedeFinalizar ? 'Para finalizar debe haber estudiantes inscritos y horas acreditadas' : undefined}
                 style={o.activo ? { background:'rgba(107,63,160,.10)', color:'#5a2d91', border:'1px solid rgba(107,63,160,.30)' } : undefined}
               >{o.activo ? 'Finalizar' : 'Activar'}</Btn>
             </div>
-            <Btn variant="outline" onClick={e => { e.stopPropagation(); onTrash(); }} style={{ width:'100%', justifyContent:'center', marginTop:8, color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar oferta</Btn>
+            {!historial && <Btn variant="outline" onClick={e => { e.stopPropagation(); onTrash(); }} style={{ width:'100%', justifyContent:'center', marginTop:8, color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar oferta</Btn>}
           </> }
         </div>
       </div>
