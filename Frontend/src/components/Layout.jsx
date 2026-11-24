@@ -12,7 +12,7 @@ const ADMIN_MENU = [
 ];
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const navigate = useNavigate();
 
   async function handleLogout() {

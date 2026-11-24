@@ -533,6 +533,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
   const [carreras,  setCarreras]  = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [ahora, setAhora] = useState(null);
   const [query,     setQuery]     = useState('');
   const [carreraFiltro, setCarreraFiltro] = useState('');
   const [tipoPapelera, setTipoPapelera] = useState('todos');
@@ -566,7 +567,10 @@ export default function Ofertas({ historial = false, papelera = false }) {
       setInscripciones(i.data);
       setEstudiantesPapelera(u?.data || []);
     } catch { show('Error al cargar', 'error'); }
-    finally { setLoading(false); }
+    finally {
+      setAhora(Date.now());
+      setLoading(false);
+    }
   }
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -934,6 +938,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
                     o={o}
                     papelera={papelera}
                     historial={historial}
+                    ahora={ahora}
                     facultad={facultadOferta}
                     puedeFinalizar={
                       inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && i.estado !== 'rechazado') &&
@@ -958,7 +963,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:760 }}>
             <thead><tr>{['Nombre','Expediente','Correo','Carrera','Se elimina','Acciones'].map(label => <th key={label} style={{ padding:'11px 12px', textAlign:'left', color:'#8d97b8', fontSize:11, textTransform:'uppercase', borderBottom:'1px solid #e2e6f0' }}>{label}</th>)}</tr></thead>
             <tbody>{estudiantesFiltrados.map(u => <tr key={u.id_estudiante}>
-              <td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_completo}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.numero_expediente}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.correo_institucional}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_carrera || '—'}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.eliminar_en ? <>{new Date(u.eliminar_en).toLocaleDateString()}<br /><small style={{ color:'#8d97b8' }}>{Math.max(0, Math.ceil((new Date(u.eliminar_en).getTime() - Date.now()) / 86400000))} días restantes</small></> : '—'}</td>
+              <td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_completo}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.numero_expediente}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.correo_institucional}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_carrera || '—'}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.eliminar_en ? <>{new Date(u.eliminar_en).toLocaleDateString()}<br /><small style={{ color:'#8d97b8' }}>{Math.max(0, Math.ceil((new Date(u.eliminar_en).getTime() - ahora) / 86400000))} días restantes</small></> : '—'}</td>
               <td style={{ padding:12, borderBottom:'1px solid #edf0f5' }}><div style={{ display:'flex', gap:6 }}><Btn variant="green" onClick={() => setConfirmacionPapelera({ tipo:'restaurarEstudiante', estudiante:u })}>Restaurar</Btn><Btn variant="danger" onClick={() => setConfirmacionPapelera({ tipo:'eliminarEstudiante', estudiante:u })}>Eliminar ahora</Btn></div></td>
             </tr>)}{!estudiantesFiltrados.length && <tr><td colSpan={6} style={{ padding:22, color:'#8d97b8', textAlign:'center' }}>{estudiantesPapelera.length ? 'No hay estudiantes que coincidan con la búsqueda.' : 'No hay estudiantes en la papelera.'}</td></tr>}</tbody>
           </table>
@@ -1180,7 +1185,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
   );
 }
 
-function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, historial = false, facultad = '', puedeFinalizar = false, onTrash, onRestore, onDeleteForever }) {
+function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, historial = false, facultad = '', puedeFinalizar = false, onTrash, onRestore, onDeleteForever, ahora }) {
   const pct = o.cupo_maximo > 0 ? Math.round((o.cupo_actual/o.cupo_maximo)*100) : 0;
   const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
 
@@ -1221,7 +1226,7 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = fal
                 {o.activo ? 'Activo' : 'Finalizada'}
               </Badge>
             </div>
-            {papelera ? <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap', textAlign:'right' }}>Se elimina: {formatDate(o.eliminar_en)}<br />{Math.max(0, Math.ceil((new Date(o.eliminar_en).getTime() - Date.now()) / 86400000))} días restantes</span> : o.created_at && (
+            {papelera ? <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap', textAlign:'right' }}>Se elimina: {formatDate(o.eliminar_en)}<br />{Math.max(0, Math.ceil((new Date(o.eliminar_en).getTime() - ahora) / 86400000))} días restantes</span> : o.created_at && (
               <span style={{ fontSize:11, color:'var(--text3)', whiteSpace:'nowrap' }}>
                 Creada: {formatDate(o.created_at)}
               </span>
@@ -1266,7 +1271,7 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = fal
             <Btn variant="green" onClick={e => { e.stopPropagation(); onRestore(); }}>Restaurar</Btn>
             <Btn variant="outline" onClick={e => { e.stopPropagation(); onDeleteForever(); }} style={{ color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar ahora</Btn>
           </div> : <>
-            {o.activo && <Btn variant="green" onClick={e => { e.stopPropagation(); onEnroll(); }} style={{ width:'100%', justifyContent:'center', marginBottom:8 }}>
+            {Boolean(o.activo) && <Btn variant="green" onClick={e => { e.stopPropagation(); onEnroll(); }} style={{ width:'100%', justifyContent:'center', marginBottom:8 }}>
               Inscribir estudiantes
             </Btn>}
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>

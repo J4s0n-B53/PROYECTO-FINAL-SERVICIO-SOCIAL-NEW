@@ -185,7 +185,7 @@ export default function Dashboard() {
 
   const activas = ofertas.filter(o => o.activo === true || o.activo === 1 || o.activo === '1').length;
   const inactivas = ofertas.length - activas;
-  const recientes  = [...inscripciones].slice(0, 8);
+  const recientes  = [...inscripciones].slice(0, 5);
   const estudiantesRecientes = [...usuarios]
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
     .slice(0, 5);
