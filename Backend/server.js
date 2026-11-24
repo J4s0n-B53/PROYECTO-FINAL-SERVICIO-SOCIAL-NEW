@@ -3,6 +3,7 @@ const express = require('express');
 const cors    = require('cors');
 const path    = require('path');
 const { PORT } = require('./src/config/env');
+const usuariosService = require('./src/services/usuariosService');
 const ofertasService = require('./src/services/ofertasService');
 const ofertasService = require('./src/services/ofertasService');
 
@@ -26,6 +27,11 @@ app.use('/api/carreras', require('./src/routes/carreras'));
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+
+const purgarEstudiantesVencidos = () => usuariosService.purgarVencidos()
+  .catch(err => console.error('Error al purgar estudiantes vencidos:', err.message));
+purgarEstudiantesVencidos();
+setInterval(purgarEstudiantesVencidos, 60 * 60 * 1000).unref();
 
 const purgarOfertasVencidas = () => ofertasService.purgarVencidas()
   .catch(err => console.error('Error al purgar ofertas vencidas:', err.message));

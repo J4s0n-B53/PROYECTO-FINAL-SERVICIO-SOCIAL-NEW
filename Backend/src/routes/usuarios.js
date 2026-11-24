@@ -4,6 +4,10 @@ const { authMiddleware, adminOnly } = require('../middlewares/auth');
 
 // GET /api/usuarios  — solo admin
 router.get('/', authMiddleware, adminOnly, usuariosController.getAll);
+router.get('/trash', authMiddleware, adminOnly, usuariosController.getTrash);
+router.delete('/trash', authMiddleware, adminOnly, usuariosController.vaciarPapelera);
+router.delete('/trash/:id', authMiddleware, adminOnly, usuariosController.eliminarDefinitivamente);
+router.patch('/trash/:id/restore', authMiddleware, adminOnly, usuariosController.restaurarDePapelera);
 router.get('/buscar', authMiddleware, adminOnly, usuariosController.buscar);
 router.post('/', authMiddleware, adminOnly, usuariosController.crear);
 router.patch('/:id', authMiddleware, adminOnly, usuariosController.actualizarEstudiante);

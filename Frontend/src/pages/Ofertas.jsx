@@ -12,6 +12,49 @@ const EMPTY_FORM = {
 };
 const API_BASE_URL = 'http://localhost:4000';
 
+const AUTORIDADES_FACULTAD = [
+  {
+    claves: ['ciencias juridicas', 'juridica'],
+    nombre: 'Lcda. Silvia Yolany López Rodríguez',
+    cargo: 'Decana'
+  },
+  {
+    claves: ['ingenieria y ciencias naturales', 'ingenieria'],
+    nombre: 'Mtro. Carlos Roberto Martínez Martínez',
+    cargo: 'Decano'
+  },
+  {
+    claves: ['economia y ciencias sociales', 'economia'],
+    nombre: 'Msc. Fernando Juan José Rodríguez Salazar',
+    cargo: 'Decano'
+  },
+  {
+    claves: ['escuela en educacion', 'escuela y educacion', 'educacion'],
+    nombre: 'Msc. Ana María Zelidón de Lemus',
+    cargo: 'Directora'
+  },
+  {
+    claves: ['ciencias de la salud', 'salud'],
+    nombre: 'Dra. Aída Verónica Guevara de Arévalo',
+    cargo: 'Decana'
+  }
+];
+
+function normalizarTexto(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function obtenerAutoridadFacultad(nombreFacultad) {
+  const nombre = normalizarTexto(nombreFacultad);
+  if (!nombre) return null;
+  const autoridad = AUTORIDADES_FACULTAD.find(item => item.claves.some(clave => nombre.includes(clave)));
+  return autoridad ? { nombre: autoridad.nombre, cargo: autoridad.cargo } : null;
+}
+
 function imageSrc(value) {
   if (!value) return '';
   return String(value).startsWith('/uploads') ? `${API_BASE_URL}${value}` : value;
@@ -184,6 +227,170 @@ function generarPDFOferta({ oferta, participantes }) {
   v.document.close();
 }
 
+function filaInfo(etiqueta, valor) {
+  return `<tr><td>${etiqueta}</td><td>${valor}</td></tr>`;
+}
+
+function generarPDFDetalleOferta({ oferta, facultad }) {
+  const hoy = new Date().toLocaleDateString('es-SV', { year: 'numeric', month: 'long', day: 'numeric' });
+  const codigo = `USO-SS-OFERTA-${String(oferta.id_oferta).padStart(5, '0')}`;
+  const logoUrl = `${window.location.origin}/logo-uso.png`;
+  const imagenUrl = imageSrc(oferta.imagen_url);
+  const autoridad = obtenerAutoridadFacultad(facultad);
+  const esTodas = !oferta.id_carrera;
+  const esAmbiental = toBoolean(oferta.es_ambiental);
+  const estado = toBoolean(oferta.activo) ? 'Activa' : 'Finalizada';
+  const valor = value => (value === null || value === undefined || String(value).trim() === '' ? '&mdash;' : escapeHtml(value));
+
+  let autorizacionNota;
+  let firmaNombre;
+  let firmaCargo;
+  let firmaFacultad;
+
+  if (esTodas) {
+    autorizacionNota = 'Esta oferta está dirigida a <strong>todas las carreras</strong>, por lo que no corresponde a una única facultad. La autorización queda sujeta a las facultades involucradas.';
+    firmaNombre = 'Nombre y cargo de la autoridad correspondiente';
+    firmaCargo = 'Autorización de las facultades involucradas';
+    firmaFacultad = 'Oferta para todas las carreras';
+  } else if (!facultad) {
+    autorizacionNota = `La carrera <strong>${escapeHtml(oferta.nombre_carrera || 'seleccionada')}</strong> no tiene una facultad asignada en el catálogo académico. La autorización corresponde a la autoridad académica competente.`;
+    firmaNombre = 'Nombre y cargo de la autoridad competente';
+    firmaCargo = 'Autoridad académica';
+    firmaFacultad = 'Carrera sin facultad asignada';
+  } else {
+    autorizacionNota = `La presente oferta corresponde a la carrera <strong>${escapeHtml(oferta.nombre_carrera || '')}</strong> de la <strong>${escapeHtml(facultad)}</strong>${autoridad ? ', y es autorizada por la autoridad indicada a continuación' : ''}.`;
+    firmaNombre = autoridad ? autoridad.nombre : 'Nombre y cargo de la autoridad de la facultad';
+    firmaCargo = autoridad ? autoridad.cargo : 'Autoridad académica';
+    firmaFacultad = facultad;
+  }
+
+  const filas = [
+    filaInfo('Título de la oferta', escapeHtml(oferta.titulo || 'Sin título')),
+    filaInfo('Estado', `<span class="estado-pill ${toBoolean(oferta.activo) ? 'activa' : 'finalizada'}">${estado}</span>`),
+    filaInfo('Fecha de creación', formatDate(oferta.created_at) || '&mdash;'),
+    `<tr><td>Descripción</td><td class="desc-cell">${oferta.descripcion ? escapeHtml(oferta.descripcion) : '&mdash;'}</td></tr>`,
+    filaInfo('Institución o entidad receptora', valor(oferta.institucion_receptora)),
+    filaInfo('Modalidad', valor(oferta.modalidad)),
+    filaInfo('Ubicación', valor(oferta.ubicacion)),
+    filaInfo('Fecha de inicio', formatDate(oferta.fecha_inicio) || '&mdash;'),
+    filaInfo('Fecha de finalización', formatDate(oferta.fecha_fin) || '&mdash;'),
+    filaInfo('Hora de inicio', formatTime(oferta.hora_inicio) || '--:--'),
+    filaInfo('Hora de finalización', formatTime(oferta.hora_fin) || '--:--'),
+    filaInfo('Horas a acreditar', `${escapeHtml(oferta.horas_acreditar)} horas${esAmbiental ? ' (actividad ambiental)' : ''}`),
+    esAmbiental ? filaInfo('Actividad ambiental', 'Sí &mdash; 25 horas obligatorias') : '',
+    filaInfo('Cupo máximo', `${escapeHtml(oferta.cupo_maximo)} estudiantes`),
+    filaInfo('Inscritos', `${escapeHtml(oferta.cupo_actual ?? 0)} de ${escapeHtml(oferta.cupo_maximo)}`),
+    filaInfo('Carrera(s)', esTodas ? 'Todas las carreras' : escapeHtml(oferta.nombre_carrera || 'Sin carrera asignada')),
+    filaInfo('Facultad', facultad ? escapeHtml(facultad) : (esTodas ? 'Todas las carreras (sin facultad única)' : 'Sin facultad asignada'))
+  ].join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"/>
+<title>Oferta ${escapeHtml(codigo)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Source Sans 3',sans-serif;background:#fff;color:#222}
+  .wrap{max-width:760px;margin:28px auto;border:3px solid #1a3a6b;border-radius:4px;overflow:hidden}
+  .top-green{background:#2c6e2f;height:8px}
+  .top-blue{background:#1a3a6b;padding:6px 0;display:flex;justify-content:center}
+  .top-blue span{color:#fff;font-size:11px;letter-spacing:1px;opacity:.75}
+  .header-main{padding:26px 38px 18px;display:flex;align-items:center;gap:20px;border-bottom:3px solid #2c6e2f}
+  .logo-box{width:68px;height:68px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .logo-box img{width:68px;height:68px;object-fit:contain;display:block}
+  .univ-name{font-family:'Playfair Display',serif;color:#1a3a6b;font-size:22px;font-weight:600;line-height:1.2;margin:0}
+  .univ-sub{color:#2c6e2f;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-top:4px}
+  .body{padding:30px 38px 28px}
+  .doc-title{font-family:'Playfair Display',serif;color:#1a3a6b;font-size:20px;font-weight:600;text-align:center;letter-spacing:1px;margin:0 0 6px}
+  .doc-sub{text-align:center;color:#555;font-size:13px;margin:0 0 22px}
+  .actividad{margin-bottom:20px;border-left:4px solid #2c6e2f;padding-left:14px;page-break-inside:avoid}
+  .actividad-label{font-size:11px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:#2c6e2f}
+  .actividad-title{font-family:'Playfair Display',serif;color:#1a3a6b;font-size:22px;font-weight:600;line-height:1.3;margin-top:3px;overflow-wrap:anywhere}
+  .foto-box{margin:0 0 22px;text-align:center;page-break-inside:avoid}
+  .foto-box img{max-width:100%;max-height:260px;object-fit:contain;border:1px solid #d0dae8;border-radius:6px;padding:4px;background:#fff}
+  .info-table{width:100%;border-collapse:collapse;font-size:13.5px;margin-bottom:24px}
+  .info-table tr:nth-child(even) td{background:#f0f4fb}
+  .info-table td{padding:9px 14px;border:1px solid #d0dae8;vertical-align:top}
+  .info-table td:first-child{font-weight:600;color:#1a3a6b;white-space:nowrap;width:34%}
+  .desc-cell{white-space:pre-wrap;word-break:break-word;text-align:justify;line-height:1.55}
+  .estado-pill{display:inline-block;font-size:11.5px;font-weight:700;letter-spacing:.5px;padding:3px 12px;border-radius:100px}
+  .estado-pill.activa{background:rgba(15,158,110,.12);color:#0a7a55}
+  .estado-pill.finalizada{background:rgba(107,63,160,.12);color:#5a2d91}
+  .auth-box{margin-top:26px;border:1px solid #d0dae8;border-top:3px solid #2c6e2f;border-radius:4px;padding:20px 24px;background:#fbfcff;page-break-inside:avoid}
+  .auth-title{font-family:'Playfair Display',serif;color:#1a3a6b;font-size:16px;font-weight:600;letter-spacing:1px;text-align:center;margin-bottom:10px}
+  .auth-note{font-size:12.5px;color:#444;line-height:1.6;text-align:justify}
+  .auth-note strong{color:#1a3a6b}
+  .sig{text-align:center;margin-top:38px}
+  .signature-line{width:280px;border-top:1.5px solid #1a3a6b;margin:0 auto 8px}
+  .sig-name{color:#1a3a6b;font-weight:700;font-size:13px;line-height:1.4}
+  .sig-role{color:#222;font-size:12.5px;margin-top:2px}
+  .sig-inst{color:#555;font-size:12px;margin-top:2px}
+  .foot-code{background:#f0f4fb;border-top:1px solid #d0dae8;padding:8px 38px;font-size:10px;color:#6b7a99;text-align:right}
+  .bot-green{background:#2c6e2f;height:6px}
+  .bot-blue{background:#1a3a6b;height:10px}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script>
+  window.addEventListener('load', function () {
+    var el = document.querySelector('.wrap');
+    if (typeof html2pdf === 'undefined') { window.print(); return; }
+    var opt = {
+      margin: [8, 8, 8, 8],
+      filename: 'Oferta-${codigo}.pdf',
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['.foto-box', '.auth-box'] }
+    };
+    html2pdf().set(opt).from(el).save();
+  });
+</script></head><body>
+<div class="wrap">
+  <div class="top-green"></div>
+  <div class="top-blue"><span>DOCUMENTO OFICIAL</span></div>
+  <div class="header-main">
+    <div class="logo-box"><img src="${logoUrl}" alt="Logo USO"/></div>
+    <div>
+      <p class="univ-name">Universidad de Sonsonate</p>
+      <p class="univ-sub">Sistema de Servicio Social</p>
+    </div>
+  </div>
+  <div class="body">
+    <p class="doc-title">FICHA DE OFERTA DE SERVICIO SOCIAL</p>
+    <p class="doc-sub">Información completa de la actividad</p>
+    <div class="actividad">
+      <div class="actividad-label">Actividad</div>
+      <div class="actividad-title">${escapeHtml(oferta.titulo || 'Oferta de servicio social')}</div>
+    </div>
+    ${imagenUrl ? `<div class="foto-box"><img src="${escapeHtml(imagenUrl)}" alt="Imagen de la oferta"/></div>` : ''}
+    <table class="info-table">${filas}</table>
+    <div class="auth-box">
+      <div class="auth-title">AUTORIZACIÓN DE LA OFERTA</div>
+      <p class="auth-note">${autorizacionNota}</p>
+      <div class="sig">
+        <div class="signature-line"></div>
+        <div class="sig-name">${escapeHtml(firmaNombre)}</div>
+        <div class="sig-role">${escapeHtml(firmaCargo)}</div>
+        <div class="sig-inst">${escapeHtml(firmaFacultad)}</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot-code">Código: ${escapeHtml(codigo)} | Emitido el ${escapeHtml(hoy)}</div>
+  <div class="bot-green"></div>
+  <div class="bot-blue"></div>
+</div></body></html>`;
+
+  const ventana = window.open('', '_blank');
+  if (!ventana) {
+    window.alert('Permite las ventanas emergentes para descargar el PDF de la oferta.');
+    return;
+  }
+  ventana.document.write(html);
+  ventana.document.close();
+}
+
 function timeToInput(value) {
   return value ? String(value).slice(0, 5) : '';
 }
@@ -322,11 +529,13 @@ function ImageDropField({ value, file, onFile, onUrlChange, id = 'oferta-imagen-
 
 export default function Ofertas({ historial = false, papelera = false }) {
   const [ofertas,   setOfertas]   = useState([]);
+  const [estudiantesPapelera, setEstudiantesPapelera] = useState([]);
   const [carreras,  setCarreras]  = useState([]);
   const [inscripciones, setInscripciones] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [query,     setQuery]     = useState('');
   const [carreraFiltro, setCarreraFiltro] = useState('');
+  const [tipoPapelera, setTipoPapelera] = useState('todos');
   const [fechaCreacionFiltro, setFechaCreacionFiltro] = useState('');
   const [modal,     setModal]     = useState(false);
   const [adminDetModal, setAdminDetModal] = useState(null);
@@ -348,10 +557,14 @@ export default function Ofertas({ historial = false, papelera = false }) {
 
   async function load() {
     try {
-      const [o, c, i] = await Promise.all([papelera ? api.get('/ofertas/trash') : api.get('/ofertas'), api.get('/carreras'), api.get('/inscripciones')]);
+      const requests = [papelera ? api.get('/ofertas/trash') : api.get('/ofertas'), api.get('/carreras'), api.get('/inscripciones')];
+      if (papelera) requests.push(api.get('/usuarios/trash'));
+      const results = await Promise.all(requests);
+      const [o, c, i, u] = results;
       setOfertas(o.data);
       setCarreras(c.data);
       setInscripciones(i.data);
+      setEstudiantesPapelera(u?.data || []);
     } catch { show('Error al cargar', 'error'); }
     finally { setLoading(false); }
   }
@@ -454,12 +667,19 @@ export default function Ofertas({ historial = false, papelera = false }) {
     if (!confirmacionPapelera) return;
     setProcesandoPapelera(true);
     try {
-      const { tipo, oferta } = confirmacionPapelera;
+      const { tipo, oferta, estudiante } = confirmacionPapelera;
       if (tipo === 'mover') await api.delete(`/ofertas/${oferta.id_oferta}`);
-      if (tipo === 'eliminar') await api.delete(`/ofertas/trash/${oferta.id_oferta}`);
-      if (tipo === 'vaciar') await api.delete('/ofertas/trash');
-      if (tipo === 'restaurar') await api.patch(`/ofertas/trash/${oferta.id_oferta}/restore`);
-      show(tipo === 'mover' ? 'Oferta movida a la papelera' : tipo === 'vaciar' ? 'Papelera vaciada' : tipo === 'restaurar' ? 'Oferta restaurada' : 'Oferta eliminada definitivamente');
+      else if (tipo === 'eliminar') await api.delete(`/ofertas/trash/${oferta.id_oferta}`);
+      else if (tipo === 'restaurar') await api.patch(`/ofertas/trash/${oferta.id_oferta}/restore`);
+      else if (tipo === 'moverEstudiante') await api.delete(`/usuarios/${estudiante.id_estudiante}`);
+      else if (tipo === 'restaurarEstudiante') await api.patch(`/usuarios/trash/${estudiante.id_estudiante}/restore`);
+      else if (tipo === 'eliminarEstudiante') await api.delete(`/usuarios/trash/${estudiante.id_estudiante}`);
+      else {
+        const results = await Promise.allSettled([api.delete('/ofertas/trash'), api.delete('/usuarios/trash')]);
+        const rejected = results.find(r => r.status === 'rejected');
+        if (rejected) throw rejected.reason;
+      }
+      show(tipo === 'mover' ? 'Oferta movida a la papelera' : tipo === 'moverEstudiante' ? 'Estudiante movido a la papelera' : tipo === 'restaurar' ? 'Oferta restaurada' : tipo === 'restaurarEstudiante' ? 'Estudiante restaurado' : tipo === 'vaciar' ? 'Papelera vaciada' : 'Elemento eliminado definitivamente');
       setConfirmacionPapelera(null);
       await load();
     } catch (e) {
@@ -585,8 +805,10 @@ export default function Ofertas({ historial = false, papelera = false }) {
     }
   }
 
+  const terminoBusqueda = query.trim().toLocaleLowerCase();
   const filtered = ofertas.filter(o => {
-    const coincideQuery   = !query || o.titulo.toLowerCase().includes(query.toLowerCase());
+    const textoOferta = [o.titulo, o.descripcion, o.ubicacion, o.institucion_receptora, o.nombre_carrera].filter(Boolean).join(' ').toLocaleLowerCase();
+    const coincideQuery   = !terminoBusqueda || textoOferta.includes(terminoBusqueda);
     const coincideEstado = papelera || (historial ? !toBoolean(o.activo) : toBoolean(o.activo));
     const coincideFechaCreacion =
       !historial ||
@@ -596,16 +818,23 @@ export default function Ofertas({ historial = false, papelera = false }) {
       !carreraFiltro ||
       (carreraFiltro === 'general' && !o.id_carrera) ||
       String(o.id_carrera || '') === carreraFiltro;
-    return coincideQuery && coincideEstado && coincideFechaCreacion && coincideFiltroCarrera;
+    const coincideTipo = !papelera || tipoPapelera !== 'estudiantes';
+    return coincideQuery && coincideEstado && coincideFechaCreacion && coincideFiltroCarrera && coincideTipo;
   });
+  const estudiantesFiltrados = estudiantesPapelera.filter(u => {
+    const texto = [u.nombre_completo, u.numero_expediente, u.correo_institucional, u.nombre_carrera, u.nombre_facultad].filter(Boolean).join(' ').toLocaleLowerCase();
+    return (tipoPapelera === 'todos' || tipoPapelera === 'estudiantes') && (!terminoBusqueda || texto.includes(terminoBusqueda));
+  });
+  const mostrarOfertas = !papelera || tipoPapelera !== 'estudiantes';
+  const mostrarEstudiantes = papelera && tipoPapelera !== 'ofertas';
 
   if (loading) return <Spinner />;
 
   return (
     <>
       <PageHeader
-        title={historial ? 'Historial de ofertas' : 'Gestión de ofertas'}
-        subtitle={historial ? 'Consulta ofertas finalizadas' : 'Administra las ofertas de servicio social'}
+        title={papelera ? 'Papelera' : historial ? 'Historial de ofertas' : 'Gestión de ofertas'}
+        subtitle={papelera ? 'Ofertas y estudiantes eliminados; se vacían después de 30 días' : historial ? 'Consulta ofertas finalizadas' : 'Administra las ofertas de servicio social'}
       />
 
       <div className="offer-filters" style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap', alignItems:'center' }}>
@@ -622,7 +851,7 @@ export default function Ofertas({ historial = false, papelera = false }) {
               id="ofertas-buscar"
               name="ofertas-buscar"
               value={query} onChange={e=>setQuery(e.target.value)}
-              placeholder="Buscar oferta..."
+              placeholder={papelera ? 'Buscar ofertas o estudiantes...' : 'Buscar oferta...'}
               style={{ width:'100%', background:'#fff', border:'1px solid rgba(10,27,78,.15)', borderRadius:8, padding:'9px 14px 9px 34px', fontFamily:'inherit', fontSize:13, color:'var(--text)', outline:'none', boxShadow:'0 1px 3px rgba(10,27,78,.06)' }}
             />
           </div>
@@ -648,6 +877,22 @@ export default function Ofertas({ historial = false, papelera = false }) {
             <option value="general">Oferta para todas las carreras</option>
             {carreras.map(c => <option key={c.id_carrera} value={c.id_carrera}>{c.nombre_carrera}</option>)}
           </select>
+          {papelera && <select
+            id="papelera-filtro-tipo"
+            name="papelera-filtro-tipo"
+            value={tipoPapelera}
+            onChange={e => setTipoPapelera(e.target.value)}
+            aria-label="Filtrar por tipo de elemento"
+            style={{
+              background:'#fff', border:'1px solid rgba(10,27,78,.15)', borderRadius:8,
+              padding:'9px 12px', fontFamily:'inherit', fontSize:13, color:'#8d97b8',
+              outline:'none', boxShadow:'0 1px 3px rgba(10,27,78,.06)', minWidth:180
+            }}
+          >
+            <option value="todos">Ofertas y estudiantes</option>
+            <option value="ofertas">Solo ofertas</option>
+            <option value="estudiantes">Solo estudiantes</option>
+          </select>}
           {historial && (
             <input
               id="ofertas-filtro-fecha-creacion"
@@ -670,35 +915,55 @@ export default function Ofertas({ historial = false, papelera = false }) {
               }}
             />
           )}
-          {papelera && <Btn variant="outline" onClick={() => setConfirmacionPapelera({ tipo:'vaciar' })} disabled={!ofertas.length} style={{ background:'#0A1B4E', color:'#fff', border:'1px solid #0A1B4E' }}>Vaciar papelera</Btn>}
+          {papelera && <Btn variant="outline" onClick={() => setConfirmacionPapelera({ tipo:'vaciar' })} disabled={!ofertas.length && !estudiantesPapelera.length} style={{ background:'#0A1B4E', color:'#fff', border:'1px solid #0A1B4E' }}>Vaciar papelera</Btn>}
           {!historial && !papelera && <Btn variant="accent" onClick={openNew}>+ Nueva oferta</Btn>}
         </div>
 
       {/* ADMIN CARDS */}
-      {filtered.length === 0
-          ? <EmptyState msg={papelera ? 'La papelera está vacía.' : historial ? 'No hay ofertas finalizadas en el historial.' : 'No hay ofertas activas registradas.'} />
+      {mostrarOfertas && <>
+        {papelera && <h2 style={{ color:'#0A1B4E', fontSize:18, margin:'4px 0 12px' }}>Ofertas</h2>}
+        {filtered.length === 0
+          ? papelera ? <p style={{ color:'var(--text3)', margin:'0 0 20px' }}>{ofertas.length ? 'No hay ofertas que coincidan con la búsqueda.' : 'No hay ofertas en la papelera.'}</p>
+            : <EmptyState msg={historial ? 'No hay ofertas finalizadas en el historial.' : 'No hay ofertas activas registradas.'} />
           : <div className="offer-cards" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))', gap:18 }}>
-              {filtered.map(o => (
-                <AdminOfertaCard
-                  key={o.id_oferta}
-                  o={o}
-                  papelera={papelera}
-                  historial={historial}
-                  puedeFinalizar={
-                    inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && i.estado !== 'rechazado') &&
-                    inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && Number(i.horas_acreditadas) > 0)
-                  }
-                  onOpen={() => !papelera && openAdminDetalle(o)}
-                  onEdit={() => openEdit(o)}
-                  onToggle={() => o.activo ? setConfirmToggle(o) : toggleOferta(o.id_oferta)}
-                  onEnroll={() => openEnrollModal(o)}
-                  onTrash={() => setConfirmacionPapelera({ tipo:'mover', oferta:o })}
-                  onRestore={() => setConfirmacionPapelera({ tipo:'restaurar', oferta:o })}
-                  onDeleteForever={() => setConfirmacionPapelera({ tipo:'eliminar', oferta:o })}
-                />
-              ))}
-            </div>
-      }
+              {filtered.map(o => {
+                const facultadOferta = carreras.find(c => Number(c.id_carrera) === Number(o.id_carrera))?.nombre_facultad || '';
+                return (
+                  <AdminOfertaCard
+                    key={o.id_oferta}
+                    o={o}
+                    papelera={papelera}
+                    historial={historial}
+                    facultad={facultadOferta}
+                    puedeFinalizar={
+                      inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && i.estado !== 'rechazado') &&
+                      inscripciones.some(i => Number(i.id_oferta) === Number(o.id_oferta) && Number(i.horas_acreditadas) > 0)
+                    }
+                    onOpen={() => !papelera && openAdminDetalle(o)}
+                    onEdit={() => openEdit(o)}
+                    onToggle={() => o.activo ? setConfirmToggle(o) : toggleOferta(o.id_oferta)}
+                    onEnroll={() => openEnrollModal(o)}
+                    onTrash={() => setConfirmacionPapelera({ tipo:'mover', oferta:o })}
+                    onRestore={() => setConfirmacionPapelera({ tipo:'restaurar', oferta:o })}
+                    onDeleteForever={() => setConfirmacionPapelera({ tipo:'eliminar', oferta:o })}
+                  />
+                );
+              })}
+            </div>}
+      </>}
+
+      {mostrarEstudiantes && <section style={{ marginTop:24 }}>
+        <h2 style={{ color:'#0A1B4E', fontSize:18, margin:'24px 0 12px' }}>Estudiantes</h2>
+        <div style={{ overflowX:'auto', background:'#fff', border:'1px solid rgba(10,27,78,.10)', borderRadius:10 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse', minWidth:760 }}>
+            <thead><tr>{['Nombre','Expediente','Correo','Carrera','Se elimina','Acciones'].map(label => <th key={label} style={{ padding:'11px 12px', textAlign:'left', color:'#8d97b8', fontSize:11, textTransform:'uppercase', borderBottom:'1px solid #e2e6f0' }}>{label}</th>)}</tr></thead>
+            <tbody>{estudiantesFiltrados.map(u => <tr key={u.id_estudiante}>
+              <td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_completo}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.numero_expediente}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.correo_institucional}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.nombre_carrera || '—'}</td><td style={{ padding:12, borderBottom:'1px solid #edf0f5', fontSize:13 }}>{u.eliminar_en ? <>{new Date(u.eliminar_en).toLocaleDateString()}<br /><small style={{ color:'#8d97b8' }}>{Math.max(0, Math.ceil((new Date(u.eliminar_en).getTime() - Date.now()) / 86400000))} días restantes</small></> : '—'}</td>
+              <td style={{ padding:12, borderBottom:'1px solid #edf0f5' }}><div style={{ display:'flex', gap:6 }}><Btn variant="green" onClick={() => setConfirmacionPapelera({ tipo:'restaurarEstudiante', estudiante:u })}>Restaurar</Btn><Btn variant="danger" onClick={() => setConfirmacionPapelera({ tipo:'eliminarEstudiante', estudiante:u })}>Eliminar ahora</Btn></div></td>
+            </tr>)}{!estudiantesFiltrados.length && <tr><td colSpan={6} style={{ padding:22, color:'#8d97b8', textAlign:'center' }}>{estudiantesPapelera.length ? 'No hay estudiantes que coincidan con la búsqueda.' : 'No hay estudiantes en la papelera.'}</td></tr>}</tbody>
+          </table>
+        </div>
+      </section>}
 
       {/* MODAL FORM (admin) */}
       <Modal open={modal} onClose={() => setModal(false)}
@@ -850,24 +1115,30 @@ export default function Ofertas({ historial = false, papelera = false }) {
       {confirmacionPapelera && (
         <Modal
           open
-          title={confirmacionPapelera.tipo === 'mover' ? 'Mover oferta a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : confirmacionPapelera.tipo === 'restaurar' ? 'Restaurar oferta' : 'Eliminar oferta definitivamente'}
+          title={confirmacionPapelera.tipo === 'mover' ? 'Mover oferta a papelera' : confirmacionPapelera.tipo === 'moverEstudiante' ? 'Mover estudiante a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : confirmacionPapelera.tipo === 'restaurar' ? 'Restaurar oferta' : confirmacionPapelera.tipo === 'restaurarEstudiante' ? 'Restaurar estudiante' : confirmacionPapelera.tipo === 'eliminarEstudiante' ? 'Eliminar estudiante definitivamente' : 'Eliminar oferta definitivamente'}
           onClose={() => !procesandoPapelera && setConfirmacionPapelera(null)}
           width={470}
           footer={<>
             <Btn variant="outline" onClick={() => setConfirmacionPapelera(null)} disabled={procesandoPapelera}>Cancelar</Btn>
-            <Btn variant={confirmacionPapelera.tipo === 'restaurar' ? 'green' : 'outline'} onClick={ejecutarAccionPapelera} disabled={procesandoPapelera} style={confirmacionPapelera.tipo === 'restaurar' ? undefined : { color:'#c53030', borderColor:'#f1a6a6' }}>
-              {procesandoPapelera ? 'Procesando...' : confirmacionPapelera.tipo === 'mover' ? 'Mover a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : confirmacionPapelera.tipo === 'restaurar' ? 'Restaurar oferta' : 'Eliminar ahora'}
+            <Btn variant={['restaurar','restaurarEstudiante'].includes(confirmacionPapelera.tipo) ? 'green' : 'outline'} onClick={ejecutarAccionPapelera} disabled={procesandoPapelera} style={['restaurar','restaurarEstudiante'].includes(confirmacionPapelera.tipo) ? undefined : { color:'#c53030', borderColor:'#f1a6a6' }}>
+              {procesandoPapelera ? 'Procesando...' : ['mover','moverEstudiante'].includes(confirmacionPapelera.tipo) ? 'Mover a papelera' : confirmacionPapelera.tipo === 'vaciar' ? 'Vaciar papelera' : ['restaurar','restaurarEstudiante'].includes(confirmacionPapelera.tipo) ? 'Restaurar' : 'Eliminar ahora'}
             </Btn>
           </>}
         >
           <p style={{ color:'var(--text2)', lineHeight:1.6, fontSize:14 }}>
             {confirmacionPapelera.tipo === 'mover'
               ? <>¿Estás seguro de mover <strong>{confirmacionPapelera.oferta.titulo}</strong> a la papelera? Se eliminará automáticamente en 30 días. No se puede mover si tiene estudiantes aceptados o horas acreditadas. Las inscripciones pendientes o rechazadas se eliminarán.</>
+              : confirmacionPapelera.tipo === 'moverEstudiante'
+                ? <>¿Mover a <strong>{confirmacionPapelera.estudiante.nombre_completo}</strong> a la papelera? Podrás restaurarlo durante 30 días y conservará sus inscripciones.</>
               : confirmacionPapelera.tipo === 'vaciar'
-                ? <>¿Estás seguro de vaciar la papelera? Se eliminarán definitivamente todas las ofertas que contiene y no se podrán recuperar.</>
+                ? <>¿Vaciar la papelera? Se eliminarán definitivamente las ofertas y estudiantes que no tengan inscripciones asociadas. Esta acción no se puede deshacer.</>
                 : confirmacionPapelera.tipo === 'restaurar'
                   ? <>¿Estás seguro de restaurar <strong>{confirmacionPapelera.oferta.titulo}</strong>? La oferta volverá a la sección de ofertas.</>
-                  : <>¿Estás seguro de eliminar definitivamente <strong>{confirmacionPapelera.oferta.titulo}</strong>? Esta acción no se puede deshacer.</>}
+                  : confirmacionPapelera.tipo === 'restaurarEstudiante'
+                    ? <>¿Restaurar a <strong>{confirmacionPapelera.estudiante.nombre_completo}</strong>? Volverá a la lista de usuarios.</>
+                    : confirmacionPapelera.tipo === 'eliminarEstudiante'
+                      ? <>¿Eliminar definitivamente a <strong>{confirmacionPapelera.estudiante.nombre_completo}</strong>? Esta acción no se puede deshacer.</>
+                      : <>¿Estás seguro de eliminar definitivamente <strong>{confirmacionPapelera.oferta.titulo}</strong>? Esta acción no se puede deshacer.</>}
           </p>
         </Modal>
       )}
@@ -909,9 +1180,14 @@ export default function Ofertas({ historial = false, papelera = false }) {
   );
 }
 
-function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, historial = false, puedeFinalizar = false, onTrash, onRestore, onDeleteForever }) {
+function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = false, historial = false, facultad = '', puedeFinalizar = false, onTrash, onRestore, onDeleteForever }) {
   const pct = o.cupo_maximo > 0 ? Math.round((o.cupo_actual/o.cupo_maximo)*100) : 0;
   const barColor = pct > 80 ? 'var(--red)' : pct > 50 ? 'var(--amber)' : 'var(--green)';
+
+  function descargarPDF(e) {
+    e.stopPropagation();
+    generarPDFDetalleOferta({ oferta: o, facultad });
+  }
 
   return (
     <div style={{
@@ -1003,7 +1279,12 @@ function AdminOfertaCard({ o, onOpen, onEdit, onToggle, onEnroll, papelera = fal
                 style={o.activo ? { background:'rgba(107,63,160,.10)', color:'#5a2d91', border:'1px solid rgba(107,63,160,.30)' } : undefined}
               >{o.activo ? 'Finalizar' : 'Activar'}</Btn>
             </div>
-            {!historial && <Btn variant="outline" onClick={e => { e.stopPropagation(); onTrash(); }} style={{ width:'100%', justifyContent:'center', marginTop:8, color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar oferta</Btn>}
+            {historial
+              ? <Btn variant="outline" onClick={descargarPDF} style={{ width:'100%', justifyContent:'center', marginTop:8 }}>Descargar PDF</Btn>
+              : <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:8 }}>
+                  <Btn variant="outline" onClick={descargarPDF}>Descargar PDF</Btn>
+                  <Btn variant="outline" onClick={e => { e.stopPropagation(); onTrash(); }} style={{ color:'#c53030', borderColor:'#f1a6a6' }}>Eliminar oferta</Btn>
+                </div>}
           </> }
         </div>
       </div>

@@ -9,6 +9,11 @@ async function getAll(req, res) {
   }
 }
 
+async function getTrash(_req, res) {
+  try { res.json(await usuariosService.getAll({ papelera: true })); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al obtener la papelera' }); }
+}
+
 async function buscar(req, res) {
   try { res.json(await usuariosService.buscar(req.query.q)); }
   catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al buscar estudiantes' }); }
@@ -31,8 +36,23 @@ async function actualizarEstudiante(req, res) {
 async function eliminarEstudiante(req, res) {
   try {
     await usuariosService.eliminarEstudiante(req.params.id);
-    res.json({ ok: true, mensaje: 'Estudiante eliminado' });
+    res.json({ ok: true, mensaje: 'Estudiante movido a la papelera; se eliminará automáticamente en 30 días' });
   } catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al eliminar estudiante' }); }
+}
+
+async function restaurarDePapelera(req, res) {
+  try { await usuariosService.restaurarDePapelera(req.params.id); res.json({ ok: true, mensaje: 'Estudiante restaurado' }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al restaurar estudiante' }); }
+}
+
+async function eliminarDefinitivamente(req, res) {
+  try { await usuariosService.eliminarDefinitivamente(req.params.id); res.json({ ok: true, mensaje: 'Estudiante eliminado definitivamente' }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al eliminar estudiante' }); }
+}
+
+async function vaciarPapelera(_req, res) {
+  try { res.json({ ok: true, mensaje: 'Papelera vaciada', ...await usuariosService.vaciarPapelera() }); }
+  catch (err) { res.status(err.status || 500).json({ error: err.message || 'Error al vaciar la papelera' }); }
 }
 
 async function actualizarHorasManuales(req, res) {
@@ -58,4 +78,4 @@ async function actualizarPlanEstudios(req,res) {
   catch(err) { res.status(err.status||500).json({error:err.message||'Error al actualizar el plan de estudios'}); }
 }
 
-module.exports = { getAll, buscar, crear, actualizarEstudiante, eliminarEstudiante, actualizarHorasManuales, actualizarNumeroExpediente, actualizarPlanEstudios };
+module.exports = { getAll, getTrash, buscar, crear, actualizarEstudiante, eliminarEstudiante, restaurarDePapelera, eliminarDefinitivamente, vaciarPapelera, actualizarHorasManuales, actualizarNumeroExpediente, actualizarPlanEstudios };

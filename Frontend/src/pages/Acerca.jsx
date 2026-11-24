@@ -58,8 +58,8 @@ export default function Acerca() {
         }}>
           {[
             ['Carrera', 'Ingenieria en Sistemas Computacionales'],
-            ['Ciclo academico', '7 ciclo'],
-            ['Periodo', '4 año, 1.er ciclo 2026'],
+            ['Ciclo academico', '8 ciclo'],
+            ['Periodo', '4 año, 2.do ciclo 2026'],
           ].map(([label, value]) => (
             <div
               key={label}

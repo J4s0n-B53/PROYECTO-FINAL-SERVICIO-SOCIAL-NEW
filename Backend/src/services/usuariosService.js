@@ -1,5 +1,17 @@
 const pool = require('../database/connection');
 const META_NO_AMBIENTAL_SIN_AMBIENTAL = 475;
+let asegurarPapeleraPromise;
+
+async function asegurarColumnaPapelera() {
+  if (!asegurarPapeleraPromise) {
+    asegurarPapeleraPromise = (async () => {
+      const [[columna]] = await pool.query(`SELECT COUNT(*) AS cantidad FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='estudiantes' AND COLUMN_NAME='deleted_at'`);
+      if (!Number(columna.cantidad)) await pool.query('ALTER TABLE estudiantes ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL');
+    })().catch(err => { asegurarPapeleraPromise = null; throw err; });
+  }
+  return asegurarPapeleraPromise;
+}
 
 async function asegurarTablaHorasManuales(connection = pool) {
   await connection.query(`CREATE TABLE IF NOT EXISTS horas_manuales_acreditadas (
@@ -28,29 +40,33 @@ const joinsHoras = `
 const camposHoras = `LEAST(COALESCE(h.horas_no_ambientales,0)+COALESCE(e.horas_manuales,0),${META_NO_AMBIENTAL_SIN_AMBIENTAL})+COALESCE(ha.horas_ambientales,0) AS horas_acumuladas,
   COALESCE(ha.horas_ambientales,0) AS horas_ambientales, COALESCE(ha.horas_ambientales,0)>=25 AS ambiental_cumplido`;
 
-async function getAll() {
+async function getAll({ papelera = false } = {}) {
+  await asegurarColumnaPapelera();
   const [rows] = await pool.query(`SELECT e.*, e.id_estudiante AS id_usuario, c.nombre_carrera,c.codigo_carrera,f.id_facultad,f.nombre_facultad,
     c.total_materias_plan AS materias_plan_catalogo,
     CASE WHEN ra.id_regla IS NOT NULL THEN ra.minimo_materias_porcentaje ELSE rg.minimo_materias_porcentaje END AS minimo_materias_porcentaje,
+    CASE WHEN e.deleted_at IS NULL THEN NULL ELSE DATE_ADD(e.deleted_at, INTERVAL 30 DAY) END AS eliminar_en,
     ${camposHoras} FROM estudiantes e LEFT JOIN carreras c ON c.id_carrera=e.id_carrera
     LEFT JOIN facultades f ON f.id_facultad=c.id_facultad
     LEFT JOIN reglas_academicas ra ON ra.id_carrera=c.id_carrera
     LEFT JOIN reglas_academicas rg ON rg.id_carrera IS NULL
-    ${joinsHoras} ORDER BY e.nombre_completo`);
+    ${joinsHoras} WHERE e.deleted_at IS ${papelera ? 'NOT ' : ''}NULL ORDER BY e.nombre_completo`);
   return rows;
 }
 
 async function buscar(query) {
+  await asegurarColumnaPapelera();
   const termino = `%${String(query || '').trim()}%`;
   if (termino === '%%') throw { status: 400, message: 'Escribe un número de expediente para buscar' };
   const [rows] = await pool.query(`SELECT e.id_estudiante,e.id_estudiante AS id_usuario,e.nombre_completo,e.correo_institucional,e.numero_expediente,
       e.materias_aprobadas,e.total_materias_plan,e.id_carrera,c.nombre_carrera,f.id_facultad,f.nombre_facultad
     FROM estudiantes e LEFT JOIN carreras c ON c.id_carrera=e.id_carrera LEFT JOIN facultades f ON f.id_facultad=c.id_facultad
-    WHERE e.numero_expediente LIKE ? LIMIT 20`, [termino]);
+    WHERE e.deleted_at IS NULL AND e.numero_expediente LIKE ? LIMIT 20`, [termino]);
   return rows;
 }
 
 async function crear(data) {
+  await asegurarColumnaPapelera();
   const nombre = String(data.nombre_completo || '').trim();
   const correo = String(data.correo_institucional || '').trim();
   const expediente = String(data.numero_expediente || '').trim();
@@ -69,6 +85,7 @@ async function crear(data) {
 }
 
 async function actualizarEstudiante(studentId, data) {
+  await asegurarColumnaPapelera();
   const id = Number(studentId);
   const nombre = String(data.nombre_completo || '').trim();
   const correo = String(data.correo_institucional || '').trim();
@@ -90,20 +107,15 @@ async function actualizarEstudiante(studentId, data) {
 }
 
 async function eliminarEstudiante(studentId) {
+  await asegurarColumnaPapelera();
   const id = Number(studentId);
   if (!Number.isInteger(id) || id < 1) throw { status: 400, message: 'Identificador de estudiante inválido' };
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const [[student]] = await conn.query('SELECT id_estudiante FROM estudiantes WHERE id_estudiante=? FOR UPDATE', [id]);
+    const [[student]] = await conn.query('SELECT id_estudiante FROM estudiantes WHERE id_estudiante=? AND deleted_at IS NULL FOR UPDATE', [id]);
     if (!student) throw { status: 404, message: 'Estudiante no encontrado' };
-    const [cupos] = await conn.query(`SELECT id_oferta, COUNT(*) AS cantidad
-      FROM inscripciones WHERE id_estudiante=? AND estado <> 'rechazado' GROUP BY id_oferta`, [id]);
-    for (const cupo of cupos) {
-      await conn.query('UPDATE ofertas SET cupo_actual=GREATEST(cupo_actual-?,0) WHERE id_oferta=?', [cupo.cantidad, cupo.id_oferta]);
-    }
-    await conn.query('DELETE FROM inscripciones WHERE id_estudiante=?', [id]);
-    await conn.query('DELETE FROM estudiantes WHERE id_estudiante=?', [id]);
+    await conn.query('UPDATE estudiantes SET deleted_at=CURRENT_TIMESTAMP WHERE id_estudiante=?', [id]);
     await conn.commit();
   } catch (err) {
     await conn.rollback();
@@ -111,6 +123,38 @@ async function eliminarEstudiante(studentId) {
   } finally {
     conn.release();
   }
+}
+
+async function restaurarDePapelera(id) {
+  await asegurarColumnaPapelera();
+  const [result] = await pool.query('UPDATE estudiantes SET deleted_at=NULL WHERE id_estudiante=? AND deleted_at IS NOT NULL', [id]);
+  if (!result.affectedRows) throw { status: 404, message: 'Estudiante no encontrado en la papelera' };
+}
+
+async function eliminarDefinitivamente(id) {
+  await asegurarColumnaPapelera();
+  const [[student]] = await pool.query('SELECT id_estudiante FROM estudiantes WHERE id_estudiante=? AND deleted_at IS NOT NULL', [id]);
+  if (!student) throw { status: 404, message: 'Estudiante no encontrado en la papelera' };
+  const [[uso]] = await pool.query('SELECT COUNT(*) AS inscripciones FROM inscripciones WHERE id_estudiante=?', [id]);
+  if (Number(uso.inscripciones)) throw { status: 409, message: 'No se puede eliminar definitivamente: el estudiante tiene inscripciones asociadas' };
+  await pool.query('DELETE FROM estudiantes WHERE id_estudiante=? AND deleted_at IS NOT NULL', [id]);
+}
+
+async function vaciarPapelera() {
+  await asegurarColumnaPapelera();
+  const [[bloqueo]] = await pool.query(`SELECT COUNT(*) AS cantidad FROM estudiantes e WHERE e.deleted_at IS NOT NULL
+    AND EXISTS (SELECT 1 FROM inscripciones i WHERE i.id_estudiante=e.id_estudiante)`);
+  if (Number(bloqueo.cantidad)) throw { status: 409, message: 'La papelera contiene estudiantes con inscripciones; no se eliminó ninguno' };
+  const [result] = await pool.query('DELETE FROM estudiantes WHERE deleted_at IS NOT NULL');
+  return { eliminados: result.affectedRows };
+}
+
+async function purgarVencidos() {
+  await asegurarColumnaPapelera();
+  const [result] = await pool.query(`DELETE FROM estudiantes WHERE deleted_at IS NOT NULL
+    AND deleted_at <= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)
+    AND NOT EXISTS (SELECT 1 FROM inscripciones WHERE inscripciones.id_estudiante=estudiantes.id_estudiante)`);
+  return result.affectedRows;
 }
 
 async function actualizarHorasManuales(studentId, horasManuales) {
@@ -152,4 +196,4 @@ async function actualizarPlanEstudios(studentId, data) {
   if(!result.affectedRows)throw {status:404,message:'Estudiante no encontrado'};
 }
 
-module.exports = { getAll, buscar, crear, actualizarEstudiante, eliminarEstudiante, actualizarHorasManuales, actualizarNumeroExpediente, actualizarPlanEstudios, asegurarTablaHorasManuales };
+module.exports = { getAll, buscar, crear, actualizarEstudiante, eliminarEstudiante, restaurarDePapelera, eliminarDefinitivamente, vaciarPapelera, purgarVencidos, actualizarHorasManuales, actualizarNumeroExpediente, actualizarPlanEstudios, asegurarTablaHorasManuales };

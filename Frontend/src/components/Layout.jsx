@@ -2,18 +2,14 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const ADMIN_MENU = [
-  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { to: '/ofertas', label: 'Ofertas', icon: '💼' },
-  { to: '/historial-ofertas', label: 'Historial de ofertas', icon: '🗂️' },
+  { to: '/dashboard', label: 'Dashboard', icon: '\u{1F4CA}' },
+  { to: '/ofertas', label: 'Ofertas', icon: '\u{1F4BC}' },
+  { to: '/historial-ofertas', label: 'Historial de ofertas', icon: '\u{1F5C2}\uFE0F' },
   { to: '/papelera-ofertas', label: 'Papelera', icon: '\u{1F5D1}\uFE0F' },
-  { to: '/inscripciones', label: 'Inscripciones', icon: '📋' },
-  { to: '/usuarios', label: 'Usuarios', icon: '👥' },
-  { to: '/acerca', label: 'Sobre nosotros', icon: 'ℹ️' },
+  { to: '/inscripciones', label: 'Inscripciones', icon: '\u{1F4CB}' },
+  { to: '/usuarios', label: 'Usuarios', icon: '\u{1F465}' },
+  { to: '/acerca', label: 'Sobre nosotros', icon: '\u2139\uFE0F' },
 ];
-
-function initials(name = '') {
-  return name.split(' ').slice(0, 2).map(word => word[0]).join('').toUpperCase();
-}
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -37,19 +33,14 @@ export default function Layout() {
           </span>
         </div>
         <div style={{ flex:1 }} />
-        <span className="topbar-role" style={{
-          fontSize:11, padding:'4px 12px', borderRadius:20,
-          border:'1px solid rgba(79,140,255,.5)', color:'#a0bfff',
-          background:'rgba(255,255,255,0.06)'
-        }}>Administrador general</span>
         <div style={{ display:'flex', alignItems:'center', gap:10 }}>
           <div style={{
-            width:32, height:32, borderRadius:'50%', background:'#1e3d8a', color:'#6fe0b8',
-            display:'flex', alignItems:'center', justifyContent:'center', fontSize:12,
+            width:32, height:32, flexShrink:0, boxSizing:'border-box', borderRadius:'50%', background:'#1e3d8a', color:'#6fe0b8',
+            display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, lineHeight:1, textAlign:'center',
             fontWeight:700, border:'2px solid rgba(111,224,184,.35)'
-          }}>{initials(user?.nombre)}</div>
+          }}>MT</div>
           <span className="topbar-name" style={{ fontSize:13, color:'rgba(255,255,255,0.80)', fontWeight:500 }}>
-            {user?.nombre?.split(' ').slice(0, 2).join(' ')}
+            Ing. Mónica Margarita Torres Linares
           </span>
         </div>
         <button onClick={handleLogout} style={{

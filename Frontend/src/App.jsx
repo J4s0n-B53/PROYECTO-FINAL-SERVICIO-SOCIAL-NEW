@@ -34,6 +34,7 @@ export default function App() {
             <Route path="papelera-ofertas" element={<Ofertas papelera />} />
             <Route path="inscripciones" element={<Inscripciones />} />
             <Route path="usuarios" element={<Usuarios />} />
+            <Route path="papelera-usuarios" element={<Navigate to="/papelera-ofertas" replace />} />
             <Route path="acerca" element={<Acerca />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

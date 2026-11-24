@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/apiClient';
 import { PageHeader, TableWrap, Th, Td, Modal, Spinner, useToast, Toast, Input, Select, Btn } from '../components/UI';
 
-export default function Usuarios() {
+function correoConSaltos(correo) {
+  if (!correo) return correo;
+  return String(correo).split(/([@.])/).map((parte, indice) => (
+    <span key={indice}>{parte}{parte === '@' || parte === '.' ? <wbr /> : null}</span>
+  ));
+}
+
+export default function Usuarios({ papelera = false }) {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [query, setQuery] = useState('');
@@ -16,6 +24,9 @@ export default function Usuarios() {
   const [estudianteEliminar, setEstudianteEliminar] = useState(null);
   const [guardandoEstudiante, setGuardandoEstudiante] = useState(false);
   const [eliminandoEstudiante, setEliminandoEstudiante] = useState(false);
+  const [accionPapelera, setAccionPapelera] = useState(null);
+  const [procesandoPapelera, setProcesandoPapelera] = useState(false);
+  const navigate = useNavigate();
   const [catalogoCarreras, setCatalogoCarreras] = useState([]);
   const [nuevo, setNuevo] = useState({nombres:'',apellidos:'',numero_expediente:'',correo_institucional:'',id_carrera:'',materias_aprobadas:'',total_materias_plan:''});
   const [planes, setPlanes] = useState({});
@@ -24,7 +35,7 @@ export default function Usuarios() {
 
   async function loadUsuarios() {
     try {
-      const r = await api.get('/usuarios');
+      const r = await api.get(papelera ? '/usuarios/trash' : '/usuarios');
       setUsuarios(r.data);
       setHorasManuales(Object.fromEntries(
         r.data.map(u => [u.id_usuario, 0])
@@ -40,7 +51,7 @@ export default function Usuarios() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadUsuarios();
     api.get('/carreras').then(({data})=>setCatalogoCarreras(data)).catch(()=>show('No se pudo cargar el catálogo de carreras','error'));
-  }, []);
+  }, [papelera]);
 
   async function crearEstudiante(e) {
     e.preventDefault();
@@ -127,7 +138,7 @@ export default function Usuarios() {
     setEliminandoEstudiante(true);
     try {
       await api.delete(`/usuarios/${estudianteEliminar.id_estudiante}`);
-      show('Estudiante y sus inscripciones eliminados');
+      show('Estudiante movido a la papelera');
       setEstudianteEliminar(null);
       await loadUsuarios();
     } catch (e) {
@@ -135,6 +146,20 @@ export default function Usuarios() {
     } finally {
       setEliminandoEstudiante(false);
     }
+  }
+
+  async function ejecutarAccionPapelera() {
+    if (!accionPapelera) return;
+    setProcesandoPapelera(true);
+    try {
+      if (accionPapelera.tipo === 'restaurar') await api.patch(`/usuarios/trash/${accionPapelera.usuario.id_estudiante}/restore`);
+      else if (accionPapelera.tipo === 'eliminar') await api.delete(`/usuarios/trash/${accionPapelera.usuario.id_estudiante}`);
+      else await api.delete('/usuarios/trash');
+      show(accionPapelera.tipo === 'restaurar' ? 'Estudiante restaurado' : accionPapelera.tipo === 'vaciar' ? 'Papelera vaciada' : 'Estudiante eliminado definitivamente');
+      setAccionPapelera(null);
+      await loadUsuarios();
+    } catch (e) { show(e.response?.data?.error || 'No se pudo completar la acción', 'error'); }
+    finally { setProcesandoPapelera(false); }
   }
 
   if (loading) return <Spinner />;
@@ -151,6 +176,27 @@ export default function Usuarios() {
 
     return coincideBusqueda && coincideCarrera && coincideHoras;
   });
+
+  if (papelera) return <>
+    <PageHeader title="Papelera de usuarios" subtitle="Los estudiantes se eliminan definitivamente después de 30 días" />
+    <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginBottom:14 }}>
+      <Btn variant="outline" onClick={() => navigate('/usuarios')}>Volver a usuarios</Btn>
+      <Btn variant="danger" onClick={() => setAccionPapelera({ tipo:'vaciar' })} disabled={!usuarios.length}>Vaciar papelera</Btn>
+    </div>
+    <TableWrap minWidth={700}>
+      <thead><tr><Th>Nombre</Th><Th>Expediente</Th><Th>Correo</Th><Th>Carrera</Th><Th>Se elimina</Th><Th>Acciones</Th></tr></thead>
+      <tbody>{usuarios.map(u => <tr key={u.id_estudiante}>
+        <Td><b>{u.nombre_completo}</b></Td><Td>{u.numero_expediente}</Td><Td>{u.correo_institucional}</Td><Td>{u.nombre_carrera || '—'}</Td>
+        <Td>{u.eliminar_en ? new Date(u.eliminar_en).toLocaleDateString() : '—'}</Td>
+        <Td><div style={{ display:'flex', gap:6 }}><Btn variant="green" onClick={() => setAccionPapelera({ tipo:'restaurar', usuario:u })}>Restaurar</Btn><Btn variant="danger" onClick={() => setAccionPapelera({ tipo:'eliminar', usuario:u })}>Eliminar ahora</Btn></div></Td>
+      </tr>)}{!usuarios.length && <tr><Td colSpan={6} style={{ textAlign:'center', padding:40, color:'var(--text3)' }}>La papelera está vacía.</Td></tr>}</tbody>
+    </TableWrap>
+    <Modal open={!!accionPapelera} onClose={() => !procesandoPapelera && setAccionPapelera(null)} title={accionPapelera?.tipo === 'restaurar' ? 'Restaurar estudiante' : accionPapelera?.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar definitivamente'} width={480} footer={<>
+      <Btn variant="outline" onClick={() => setAccionPapelera(null)} disabled={procesandoPapelera}>Cancelar</Btn>
+      <Btn variant={accionPapelera?.tipo === 'restaurar' ? 'green' : 'danger'} onClick={ejecutarAccionPapelera} disabled={procesandoPapelera}>{procesandoPapelera ? 'Procesando...' : accionPapelera?.tipo === 'restaurar' ? 'Restaurar' : accionPapelera?.tipo === 'vaciar' ? 'Vaciar papelera' : 'Eliminar ahora'}</Btn>
+    </>}><p style={{ color:'var(--text2)', fontSize:14, lineHeight:1.6 }}>{accionPapelera?.tipo === 'restaurar' ? <>¿Restaurar a <strong>{accionPapelera.usuario.nombre_completo}</strong>? Volverá a la lista de usuarios.</> : accionPapelera?.tipo === 'vaciar' ? '¿Eliminar definitivamente todos los estudiantes de la papelera? Los que tengan inscripciones asociadas no podrán eliminarse.' : <>¿Eliminar definitivamente a <strong>{accionPapelera?.usuario?.nombre_completo}</strong>? Esta acción no se puede deshacer.</>}</p></Modal>
+    <Toast toast={toast} />
+  </>;
 
   return (
     <>
@@ -203,8 +249,8 @@ export default function Usuarios() {
       <TableWrap minWidth={0} fixedLayout className="students-records-table">
         <thead><tr>
           <Th style={{ width:'8%' }}>Nombre</Th>
-          <Th style={{ width:'6%', textAlign:'left' }}>Expediente</Th>
-          <Th style={{ width:'14%' }}>Correo</Th>
+          <Th style={{ width:'9%', textAlign:'left' }}>Expediente</Th>
+          <Th style={{ width:'11%' }}>Correo</Th>
           <Th style={{ width:'9%' }}>Carrera</Th>
           <Th style={{ width:'8%' }}>Facultad</Th>
           <Th style={{ width:'6%' }}>Materias</Th>
@@ -234,7 +280,22 @@ export default function Usuarios() {
               <Td style={{ ...rowActiveStyle, fontSize:12, color:secondaryTextColor, whiteSpace:'nowrap', textAlign:'left' }}>
                 {esEstudiante ? (u.numero_expediente || '—') : <span style={{ color:'var(--text3)' }}>—</span>}
               </Td>
-              <Td style={{ ...rowActiveStyle, fontSize:12, color:secondaryTextColor, whiteSpace:'nowrap' }}>{u.correo_institucional}</Td>
+              <Td style={{ ...rowActiveStyle, fontSize:12, color:secondaryTextColor }}>
+                <span
+                  title={u.correo_institucional}
+                  style={{
+                    display:'-webkit-box',
+                    WebkitBoxOrient:'vertical',
+                    WebkitLineClamp:2,
+                    overflow:'hidden',
+                    overflowWrap:'anywhere',
+                    wordBreak:'break-word',
+                    lineHeight:1.35
+                  }}
+                >
+                  {correoConSaltos(u.correo_institucional)}
+                </span>
+              </Td>
               <Td style={{ ...rowActiveStyle, fontSize:12, color:secondaryTextColor }}>{u.nombre_carrera || '-'}</Td>
               <Td style={{ ...rowActiveStyle, fontSize:12, color:secondaryTextColor }}>{u.nombre_facultad || '-'}</Td>
               <Td style={rowActiveStyle}>
@@ -355,7 +416,7 @@ export default function Usuarios() {
         </>}
       >
         <p style={{ color:'var(--text2)', fontSize:14, lineHeight:1.6 }}>
-          ¿Eliminar a <strong style={{ color:'var(--text)' }}>{estudianteEliminar?.nombre_completo}</strong>? También se borrarán sus inscripciones y horas manuales acreditadas, y se actualizarán los cupos de las ofertas.
+          ¿Mover a <strong style={{ color:'var(--text)' }}>{estudianteEliminar?.nombre_completo}</strong> a la papelera? Podrás restaurarlo durante 30 días y conservará sus inscripciones.
         </p>
       </Modal>
       <Modal
